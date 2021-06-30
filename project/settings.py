@@ -48,7 +48,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'app.middleware.LMiddleware',
+    'app.middleware.LsnMiddleware',
 ]
 
 ROOT_URLCONF = 'project.urls'
@@ -93,6 +93,11 @@ DATABASES = {
         'PORT': 5432,
     },
 }
+
+
+DATABASE_ROUTERS = [
+    'app.router.Router',
+]
 
 
 CACHES = {

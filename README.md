@@ -1,6 +1,6 @@
 # Scaling a PostgreSQL Database
 
-This project demonstrates how a Django web app can cache PostgreSQL LSNs in Redis to effectively utilize PostgreSQL read-replicas while avoiding returning stale data (previously written within a web/API request from the same user). This is a simplified example of a project completed during my time working on Bitbucket Cloud for Atlassian, covered in this [blog post Scaling Bitbucket's Database](https://bitbucket.org/blog/scaling-bitbuckets-database).
+This project demonstrates how a Django web app can cache PostgreSQL LSNs in Redis to effectively utilize PostgreSQL read-replicas while avoiding returning stale data (previously written in another web/API request from the same user). This is a simplified example of a project completed during my time working on Bitbucket Cloud for Atlassian, covered in this [blog post Scaling Bitbucket's Database](https://bitbucket.org/blog/scaling-bitbuckets-database).
 
 
 ## WAL and LSN
@@ -75,3 +75,50 @@ You can create tables on the primary and see them on the replica.
     docker-compose exec web ./manage.py migrate
     docker-compose exec web ./manage.py createsuperuser
     docker-compose exec replica psql -U postgres -c 'select * from auth_user;'
+
+
+## Multiple db operations in a single request
+
+The intention is for all views (API endpoints) in the web app to automatically use the replica until a write operation is performed. From that point on the primary database is used.
+
+![one request multiple db operations](images/Database2.png)
+
+This is achieved with a Django database router in `app/router.py`. It takes advantage of the fact that Django uses a new thread for each request and stores the state of `write_happened` in a thread-local variable. This is to overcome the fact that database routers are instantiated only once at startup, so the __init__ method can't be used to store the state in a member variable.
+
+The logging in the router shows that it in fact works as expected.
+
+    % http POST localhost:8000/things color=orange
+
+    % http POST localhost:8000/things/1 color=blue
+    HTTP/1.1 200 OK
+    [
+        {
+            "fields": {
+                "color": "blue"
+            },
+            "model": "app.thing",
+            "pk": 1
+        }
+    ]
+
+    db_for_read replica, 'Thread-6'
+    db_for_read replica, 'Thread-6'
+    db_for_read replica, 'Thread-6'
+    db_for_read default, 'Thread-6'
+
+
+Note that the view for updating a thing in `app/views.py` has some senseless read operations in it just to demonstrate this point.
+
+    thing = Thing.objects.get(pk=pk)
+
+    if request.method == 'POST':
+        # This is senseless, but simulates three read operations to the replica
+        thing = Thing.objects.get(pk=pk)
+        thing = Thing.objects.get(pk=pk)
+
+        data = json.loads(request.body.decode('utf-8'))
+        thing.color = data['color']
+        thing.save()
+
+        # This is senseless, but simulates a read operation to the primary
+        thing = Thing.objects.get(pk=pk)
