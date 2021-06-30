@@ -1,0 +1,37 @@
+---
+version: "3.9"
+
+services:
+  db:
+    image: postgres
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+  replica:
+    image: postgres
+    command: postgres -c 'config_file=/etc/postgresql/postgresql.conf'
+    volumes:
+      - ./data/replica:/var/lib/postgresql/data
+      - ./replica.conf:/etc/postgresql/postgresql.conf
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    depends_on:
+      - db
+  redis:
+    image: redis
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/code
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - replica
+      - redis
